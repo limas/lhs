@@ -13,6 +13,7 @@
 #include <netdb.h>
 
 #include "global.h"
+#include "list.h"
 #include "server.h"
 
 static char *strtok_l(char *str1, char *str2)
@@ -106,11 +107,60 @@ static bool _dummy_prehandle()
     return true;
 }
 
+typedef enum
+{
+    HTTP_STATUS_100_CONT = 0,
+    HTTP_STATUS_101_SWITCH_PROTO,
+    HTTP_STATUS_102_PROC,
+    HTTP_STATUS_103_EARLY_HINTS,
+
+    HTTP_STATUS_200_OK,
+
+    HTTP_STATUS_400_BAD_REQ,
+    HTTP_STATUS_401_UNAURTH,
+    HTTP_STATUS_402_PAY_REQ,
+    HTTP_STATUS_403_FORBID,
+    HTTP_STATUS_404_NOT_FOUND,
+}HTTP_STATUS_CODE;
+
+const char _http_err_msg_404[]={
+    "HTTP/1.1 404 Not Found\r\n"
+    "Content-Length: 0\r\n"
+    "Server: lhs/0.1 (Unix) (Red-Hat/Linux)\r\n"
+    "Connection: close\r\n"
+};
+
+typedef struct
+{
+    const char *msg;
+    uint32_t len;
+}http_err_msg;
+
+http_err_msg _http_err_msg[]={
+    {NULL, 0},
+    {_http_err_msg_404, sizeof(_http_err_msg_404)},
+};
+
+static const char *_get_error_reponse(HTTP_STATUS_CODE code, uint32_t *len)
+{
+    uint32_t idx = 0;
+
+    switch(code)
+    {
+        case HTTP_STATUS_404_NOT_FOUND: idx=1; break;
+        default:break;
+    }
+
+    *len = _http_err_msg[idx].len;
+    return _http_err_msg[idx].msg;
+}
+
 static bool _request_parsing(server *server, int clientfd, request *req)
 {
     static char *buf = NULL;
     char *req_line;
     char *header;
+    char *value;
     char *body;
     ssize_t len;
 
@@ -122,6 +172,13 @@ static bool _request_parsing(server *server, int clientfd, request *req)
             fprintf(stderr, "fail to allocate memory.\n");
             exit(-1);
         }
+    }
+
+    req->header = list_new(NULL);
+    if(!req->header)
+    {
+        fprintf(stderr, "fail to new header list.\n");
+        exit(-1);
     }
 
     len = recv(clientfd, buf, REQ_BUF_SIZE, 0);
@@ -159,6 +216,11 @@ static bool _request_parsing(server *server, int clientfd, request *req)
     {
         if('\0' == *header)
             break;
+
+        value = strchr(header, ':');
+        *value = '\0';
+        value++;
+        list_add(req->header, header, value);
     }
 
     /* deal with body */
@@ -241,6 +303,8 @@ bool server_start(server *server)
 {
     res_handler handler=NULL;
     struct epoll_event event;
+    const char *msg;
+    uint32_t len;
 
     if(-1 == listen(server->serverfd, 10))
     {
@@ -293,7 +357,7 @@ bool server_start(server *server)
                 }
 
                 setnonblocking(clientfd);
-                event.events = EPOLLIN | EPOLLET;
+                event.events = EPOLLIN;
                 event.data.fd = clientfd;
                 if(-1 == epoll_ctl(server->epollfd, EPOLL_CTL_ADD, clientfd, &event))
                 {
@@ -317,6 +381,9 @@ bool server_start(server *server)
                 /* pre-handler, in charge such as session validation, unauthorized access rejection, etc... */
                 if(false == server->pre_handler(server, clientfd, &req))
                 {
+                    msg = _get_error_reponse(HTTP_STATUS_404_NOT_FOUND, &len);
+                    write(clientfd, msg, len);
+
                     goto disconnect;
                 }
 
@@ -327,8 +394,8 @@ bool server_start(server *server)
                 }
                 else
                 {
-                    char msg[]={"HTTP/1.1 404 Not Found\r\n"};
-                    write(clientfd, msg, sizeof(msg));
+                    msg = _get_error_reponse(HTTP_STATUS_401_UNAURTH, &len);
+                    write(clientfd, msg, len);
                 }
 
                 /* check persistent connection request, if not, close the connection */
@@ -340,11 +407,13 @@ bool server_start(server *server)
 disconnect:
                 if(-1 == epoll_ctl(server->epollfd, EPOLL_CTL_DEL, clientfd, NULL))
                 {
-                    fprintf(stderr, "fail to remove epoll event with client socket.\n");
+                    fprintf(stderr, "fail to remove epoll event with client socket [%d].\n", clientfd);
                 }
 
                 fprintf(stdout, "client [%d] disconnected.\n", clientfd);
                 close(clientfd);
+
+                list_del(req.header);
             }
         }
     }

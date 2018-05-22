@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "global.h"
+#include "list.h"
 #include "server.h"
 
 /* function prototype */

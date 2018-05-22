@@ -3,15 +3,22 @@ typedef struct _server server;
 typedef struct _request request;
 typedef struct _response response;
 
-typedef bool (*pre_handler)(server *server, int clientfd, const request *req);
-typedef response *(*res_handler)(server *self, int fd, const request *req);
+typedef bool (*pre_handler)(
+        server *server,
+        int clientfd,
+        const request *req);
+
+typedef response *(*res_handler)(
+        server *self,
+        int fd,
+        const request *req);
 
 struct _request
 {
     char *method;
     char *resource;
     char *protocol;
-    char *header;
+    list header;
     char *body;
 };
 
