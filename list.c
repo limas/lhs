@@ -7,8 +7,11 @@
 
 #include "global.h"
 #include "list.h"
+#include "misc.h"
 
 #define LENTITY(x) ((lentity *)x)
+
+typedef int (*cmpfunc)(const char *str1, const char *str2);
 
 typedef struct _list_entry list_entry;
 struct _list_entry
@@ -22,18 +25,28 @@ typedef struct
 {
     list_entry *table;
     list_entry **tail;
+    cmpfunc cmp;
 }lentity;
 
-static list_cfg _def_cfg = {.dim=1024};
+static list_cfg _def_cfg =
+{
+    .dim=1024,
+    .key_case_sensitive=false,
+};
 
 list list_new(list_cfg *cfg)
 {
     lentity *inst;
 
+    if(!cfg)
+        cfg = &_def_cfg;
+
     inst = (lentity *)malloc(sizeof(lentity));
     if(inst)
     {
+        inst->table = NULL;
         inst->tail = &(inst->table);
+        inst->cmp = (cmpfunc)((cfg->key_case_sensitive)?(strcmp):(stricmp));
     }
 
     return (list)inst;
@@ -65,7 +78,7 @@ bool list_remove(list list, char *key)
 
     while(*entry)
     {
-        if(0 == strcmp((*entry)->key, key))
+        if(0 == LENTITY(list)->cmp((*entry)->key, key))
         {
             next = (*entry)->next;
 
@@ -94,7 +107,7 @@ void *list_find(list list, char *key)
 
     while(entry)
     {
-        if(0 == strcmp(entry->key, key))
+        if(0 == LENTITY(list)->cmp(entry->key, key))
             return entry->obj;
 
         entry = entry->next;
@@ -105,8 +118,13 @@ void *list_find(list list, char *key)
 
 bool list_del(list list)
 {
-    list_entry *entry = LENTITY(list)->table;
+    list_entry *entry;
     list_entry *next;
+
+    if(!list)
+        return true;
+
+    entry = LENTITY(list)->table;
 
     while(entry)
     {

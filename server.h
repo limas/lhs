@@ -36,6 +36,7 @@ struct _server
     struct epoll_event *events;
 
     pre_handler pre_handler;
+    list handler;
 };
 
 struct server_info

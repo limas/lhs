@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <ctype.h>
 #include <fcntl.h>
 
 #include <errno.h>
@@ -15,33 +16,7 @@
 #include "global.h"
 #include "list.h"
 #include "server.h"
-
-static char *strtok_l(char *str1, char *str2)
-{
-    static char *str;
-    char *pos;
-    char *ret = NULL;
-
-    if(NULL != str1)
-        str = str1;
-
-    if(NULL == str)
-        return NULL;
-
-    pos = strstr(str, str2);
-    ret = str;
-    if(NULL != pos)
-    {
-        *pos = '\0';
-        str = (pos+strlen(str2));
-    }
-    else
-    {
-        str = NULL;
-    }
-
-    return ret;
-}
+#include "misc.h"
 
 static int setnonblocking(int fd)
 {
@@ -220,7 +195,7 @@ static bool _request_parsing(server *server, int clientfd, request *req)
         value = strchr(header, ':');
         *value = '\0';
         value++;
-        list_add(req->header, header, value);
+        list_add(req->header, header, trim(value));
     }
 
     /* deal with body */
@@ -269,6 +244,13 @@ server *server_create(struct server_info *info)
             break;
         }
 
+        serv_inst->handler = list_new(NULL);
+        if(INVALID_LIST == serv_inst->handler)
+        {
+            fprintf(stderr, "fail to create list for handler.\n");
+            break;
+        }
+
         fprintf(stdout, "server created.\n");
         return serv_inst;
     }while(0);
@@ -296,7 +278,7 @@ bool server_addprehandle(server *server, pre_handler handler)
 
 bool server_addhandle(server *server, char *path, res_handler handler)
 {
-    return true;
+    return list_add(server->handler, path, (void *)handler);
 }
 
 bool server_start(server *server)
@@ -381,27 +363,27 @@ bool server_start(server *server)
                 /* pre-handler, in charge such as session validation, unauthorized access rejection, etc... */
                 if(false == server->pre_handler(server, clientfd, &req))
                 {
+                    goto disconnect;
+                }
+
+                /* find corresponding handler */
+                handler = (res_handler)list_find(server->handler, req.resource);
+                if(handler)
+                {
+                    handler(server, clientfd, &req);
+                }
+                else
+                {
                     msg = _get_error_reponse(HTTP_STATUS_404_NOT_FOUND, &len);
                     write(clientfd, msg, len);
 
                     goto disconnect;
                 }
 
-                /* find corresponding handler */
-                if(handler)
-                {
-                    handler(server, clientfd, NULL);
-                }
-                else
-                {
-                    msg = _get_error_reponse(HTTP_STATUS_401_UNAURTH, &len);
-                    write(clientfd, msg, len);
-                }
-
                 /* check persistent connection request, if not, close the connection */
-                if(0 /* placeholder for persistent connection checking */)
+                if(0 == stricmp("keep-alive", list_find(req.header, "connection")))
                 {
-                    continue;
+                    goto done;
                 }
 
 disconnect:
@@ -412,7 +394,7 @@ disconnect:
 
                 fprintf(stdout, "client [%d] disconnected.\n", clientfd);
                 close(clientfd);
-
+done:
                 list_del(req.header);
             }
         }

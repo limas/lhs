@@ -1,8 +1,11 @@
 
+#define INVALID_LIST (NULL)
+
 typedef void * list;
 typedef struct
 {
     uint32_t dim;
+    bool key_case_sensitive;
 }list_cfg;
 
 list list_new(list_cfg *cfg);
