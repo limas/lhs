@@ -31,7 +31,11 @@ else
     make clean all > /dev/null
 fi
 
-# install database if not yet installed
+# install sqlite3 if not yet installed
+which sqlite3 > /dev/null
+if [[ $? != 0 ]]; then
+    sudo apt-get install sqlite3
+fi
 
 # do startup server if specified
 if [[ $do_run == yes ]]; then

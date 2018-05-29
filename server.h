@@ -1,15 +1,16 @@
+#include <sqlite3.h>
 
-typedef struct _server server;
+typedef void * server;
 typedef struct _request request;
 typedef struct _response response;
 
 typedef bool (*pre_handler)(
-        server *server,
+        server server,
         int clientfd,
         const request *req);
 
-typedef response *(*res_handler)(
-        server *self,
+typedef response (*res_handler)(
+        server server,
         int fd,
         const request *req);
 
@@ -25,18 +26,7 @@ struct _request
 struct _response
 {
     char *msg;
-};
-
-struct _server
-{
-    char *ip;
-    char *port;
-    int serverfd;
-    int epollfd;
-    struct epoll_event *events;
-
-    pre_handler pre_handler;
-    list handler;
+    uint32_t msglen;
 };
 
 struct server_info
@@ -45,9 +35,9 @@ struct server_info
     char *port;
 };
 
-server *server_create(struct server_info *info);
-bool server_destroy(server *server);
-bool server_addprehandle(server *server, pre_handler handler);
-bool server_addhandle(server *server, char *path, res_handler handler);
-bool server_start(server *server);
+server server_create(struct server_info *, sqlite3 *);
+bool server_destroy(server);
+bool server_addprehandle(server, pre_handler);
+bool server_addhandle(server, char *, res_handler);
+bool server_start(server);
 
