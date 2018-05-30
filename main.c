@@ -72,8 +72,8 @@ static sqlite3 *db_init(void)
     if(new_db)
     {
         sql = "CREATE TABLE SESSION(" \
-              "ID CHAR(40)  PRIMARY KEY  NOT NULL,"
-              "USER_ID INT               NOT NULL,"
+              "ID CHAR(40)  PRIMARY KEY  NOT NULL," \
+              "USER_ID INT               NOT NULL," \
               "FOREIGN KEY(USER_ID) REFERENCES USER(ID));" \
               "" \
               "CREATE TABLE USER(" \
@@ -84,6 +84,11 @@ static sqlite3 *db_init(void)
               "";
 
         ret = sqlite3_exec(db, sql, NULL, 0, &errmsg);
+        if(SQLITE_OK != ret)
+        {
+            fprintf(stderr, "fail to create table, SQL error: %s\n", zErrMsg);
+            sqlite3_free(zErrMsg);
+        }
     }
 
     return db;
