@@ -5,13 +5,18 @@
 #include <unistd.h>
 #include <string.h>
 
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
 #include <sqlite3.h>
 
 #include "global.h"
 #include "list.h"
 #include "server.h"
 
-#define DB_NAME "test.sql"
+#define DB_NAME "db.sql"
+#define DB_DEF_TABLE "db_def_table.txt"
 
 /* function prototype */
 static response server_home(server server, int fd, const request *req);
@@ -48,13 +53,62 @@ static bool _pre_handle(server server, int clientfd, const request *req)
     return true;
 }
 
+static void create_default_table(sqlite3 *db)
+{
+    int ret;
+    char *sql = NULL;;
+    char *errmsg = NULL;
+    int fd = -1;
+    struct stat info;
+
+    fprintf(stdout, "construct default tables for new database.\n");
+
+    do
+    {
+        fd = open(DB_DEF_TABLE, O_RDONLY);
+        if(-1 == fd)
+        {
+            break;
+        }
+
+        ret = fstat(fd, &info);
+        if(-1 == ret)
+        {
+            fprintf(stdout, "warning, fail to stat table constructor [%d].\n", errno);
+            break;
+        }
+
+        sql = (char *)malloc(info.st_size+1);
+        if(!sql)
+        {
+            fprintf(stdout, "warning, fail to allocate memory for default table construction.\n");
+            break;
+        }
+
+        read(fd, (void *)sql, info.st_size);
+        sql[info.st_size]='\0';
+        ret = sqlite3_exec(db, sql, NULL, 0, &errmsg);
+
+        if(SQLITE_OK != ret)
+        {
+            fprintf(stdout, "warning, fail to create table, SQL error: %s\n", errmsg);
+            sqlite3_free(errmsg);
+            sqlite3_close(db);
+        }
+    }while(0);
+
+    if(-1 != fd)
+        close(fd);
+
+    free(sql);
+}
+
 static sqlite3 *db_init(void)
 {
     int ret;
     bool new_db = true;
-    sqlite3 *db = NULL;
-    char *sql;
     char *errmsg = NULL;
+    sqlite3 *db = NULL;
 
     if(0 == access(DB_NAME, R_OK|W_OK))
     {
@@ -65,30 +119,13 @@ static sqlite3 *db_init(void)
 
     if(ret)
     {
-        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
+        fprintf(stderr, "fail to open database: %s\n", sqlite3_errmsg(db));
         return NULL;
     }
 
     if(new_db)
     {
-        sql = "CREATE TABLE SESSION(" \
-              "ID CHAR(40)  PRIMARY KEY  NOT NULL," \
-              "USER_ID INT               NOT NULL," \
-              "FOREIGN KEY(USER_ID) REFERENCES USER(ID));" \
-              "" \
-              "CREATE TABLE USER(" \
-              "ID      INT  PRIMARY KEY  NOT NULL," \
-              "F_NAME TEXT  NOT NULL," \
-              "L_NAME TEXT  NOT NULL);" \
-              "" \
-              "";
-
-        ret = sqlite3_exec(db, sql, NULL, 0, &errmsg);
-        if(SQLITE_OK != ret)
-        {
-            fprintf(stderr, "fail to create table, SQL error: %s\n", zErrMsg);
-            sqlite3_free(zErrMsg);
-        }
+        create_default_table(db);
     }
 
     return db;
